@@ -1,140 +1,158 @@
-import { useEffect, useMemo, useState, useRef } from 'react'
-import { supabase } from '../lib/supabaseClient'
-import type { Category, TimeLog } from '../types'
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
+import { supabase } from '../lib/supabaseClient';
+import type { Category, TimeLog } from '../types';
 
 export function Home() {
-  const [categories, setCategories] = useState<Category[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [activeLogByCategoryId, setActiveLogByCategoryId] = useState<Record<string, TimeLog | undefined>>({})
-  const [newCategoryName, setNewCategoryName] = useState('')
-  const [swipedCategoryId, setSwipedCategoryId] = useState<string | null>(null)
-  const touchStartX = useRef<number>(0)
-  const touchStartY = useRef<number>(0)
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [activeLogByCategoryId, setActiveLogByCategoryId] = useState<
+    Record<string, TimeLog | undefined>
+  >({});
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [swipedCategoryId, setSwipedCategoryId] = useState<string | null>(null);
+  const touchStartX = useRef<number>(0);
+  const touchStartY = useRef<number>(0);
 
   useEffect(() => {
-    void refresh()
-  }, [])
+    void refresh();
+  }, []);
 
   async function refresh() {
-    setLoading(true)
-    setError(null)
+    setLoading(true);
+    setError(null);
     const {
       data: { user },
-    } = await supabase.auth.getUser()
-    if (!user) return
+    } = await supabase.auth.getUser();
+    if (!user) return;
     const { data: cats, error: catErr } = await supabase
       .from('categories')
       .select('*')
       .eq('user_id', user.id)
-      .order('created_at', { ascending: true })
+      .order('created_at', { ascending: true });
     if (catErr) {
-      setError(catErr.message)
-      setLoading(false)
-      return
+      setError(catErr.message);
+      setLoading(false);
+      return;
     }
-    setCategories(cats ?? [])
+    setCategories(cats ?? []);
 
     const { data: logs } = await supabase
       .from('time_logs')
       .select('*')
       .eq('user_id', user.id)
-      .is('ended_at', null)
-    const map: Record<string, TimeLog | undefined> = {}
-    ;(logs ?? []).forEach((l) => (map[l.category_id] = l))
-    setActiveLogByCategoryId(map)
-    setLoading(false)
+      .is('ended_at', null);
+    const map: Record<string, TimeLog | undefined> = {};
+    (logs ?? []).forEach((l) => (map[l.category_id] = l));
+    setActiveLogByCategoryId(map);
+    setLoading(false);
   }
 
   async function addCategory(e: React.FormEvent) {
-    e.preventDefault()
-    if (!newCategoryName.trim()) return
+    e.preventDefault();
+    if (!newCategoryName.trim()) return;
     const {
       data: { user },
-    } = await supabase.auth.getUser()
-    if (!user) return
+    } = await supabase.auth.getUser();
+    if (!user) return;
     const { data, error } = await supabase
       .from('categories')
       .insert({ name: newCategoryName.trim(), user_id: user.id })
       .select()
-      .single()
+      .single();
     if (error) {
-      setError(error.message)
+      setError(error.message);
     } else {
-      setCategories(prev => [...prev, data])
-      setNewCategoryName('')
+      setCategories((prev) => [...prev, data]);
+      setNewCategoryName('');
     }
   }
 
-  async function deleteCategory(categoryId: string) {
-    const { error } = await supabase.from('categories').delete().eq('id', categoryId)
+  const deleteCategory = useCallback(async (categoryId: string) => {
+    const { error } = await supabase
+      .from('categories')
+      .delete()
+      .eq('id', categoryId);
     if (error) {
-      setError(error.message)
+      setError(error.message);
     } else {
-      setCategories(prev => prev.filter(c => c.id !== categoryId))
-      setActiveLogByCategoryId(prev => {
-        const updated = { ...prev }
-        delete updated[categoryId]
-        return updated
-      })
-      setSwipedCategoryId(null)
+      setCategories((prev) => prev.filter((c) => c.id !== categoryId));
+      setActiveLogByCategoryId((prev) => {
+        const updated = { ...prev };
+        delete updated[categoryId];
+        return updated;
+      });
+      setSwipedCategoryId(null);
     }
-  }
+  }, []);
 
-  async function toggleTimer(categoryId: string) {
-    const active = activeLogByCategoryId[categoryId]
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-    if (!user) return
-    if (!active) {
-      const { data, error } = await supabase
-        .from('time_logs')
-        .insert({ user_id: user.id, category_id: categoryId, started_at: new Date().toISOString() })
-        .select()
-        .single()
-      if (error) {
-        setError(error.message)
+  const toggleTimer = useCallback(
+    async (categoryId: string) => {
+      const active = activeLogByCategoryId[categoryId];
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return;
+      if (!active) {
+        const { data, error } = await supabase
+          .from('time_logs')
+          .insert({
+            user_id: user.id,
+            category_id: categoryId,
+            started_at: new Date().toISOString(),
+          })
+          .select()
+          .single();
+        if (error) {
+          setError(error.message);
+        } else {
+          setActiveLogByCategoryId((prev) => ({ ...prev, [categoryId]: data }));
+        }
       } else {
-        setActiveLogByCategoryId(prev => ({ ...prev, [categoryId]: data }))
+        const endedAt = new Date();
+        const startedAt = new Date(active.started_at);
+        const durationSeconds = Math.max(
+          0,
+          Math.round((endedAt.getTime() - startedAt.getTime()) / 1000)
+        );
+        const { error } = await supabase
+          .from('time_logs')
+          .update({
+            ended_at: endedAt.toISOString(),
+            duration_seconds: durationSeconds,
+          })
+          .eq('id', active.id);
+        if (error) {
+          setError(error.message);
+        } else {
+          setActiveLogByCategoryId((prev) => {
+            const updated = { ...prev };
+            delete updated[categoryId];
+            return updated;
+          });
+        }
       }
-    } else {
-      const endedAt = new Date()
-      const startedAt = new Date(active.started_at)
-      const durationSeconds = Math.max(0, Math.round((endedAt.getTime() - startedAt.getTime()) / 1000))
-      const { error } = await supabase
-        .from('time_logs')
-        .update({ ended_at: endedAt.toISOString(), duration_seconds: durationSeconds })
-        .eq('id', active.id)
-      if (error) {
-        setError(error.message)
-      } else {
-        setActiveLogByCategoryId(prev => {
-          const updated = { ...prev }
-          delete updated[categoryId]
-          return updated
-        })
-      }
-    }
-  }
+    },
+    [activeLogByCategoryId]
+  );
 
-  function handleTouchStart(e: React.TouchEvent, categoryId: string) {
-    touchStartX.current = e.touches[0].clientX
-    touchStartY.current = e.touches[0].clientY
-    setSwipedCategoryId(null)
+  function handleTouchStart(e: React.TouchEvent) {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+    setSwipedCategoryId(null);
   }
 
   function handleTouchMove(e: React.TouchEvent, categoryId: string) {
-    const touchCurrentX = e.touches[0].clientX
-    const touchCurrentY = e.touches[0].clientY
-    const deltaX = touchStartX.current - touchCurrentX
-    const deltaY = Math.abs(touchStartY.current - touchCurrentY)
-    
+    const touchCurrentX = e.touches[0].clientX;
+    const touchCurrentY = e.touches[0].clientY;
+    const deltaX = touchStartX.current - touchCurrentX;
+    const deltaY = Math.abs(touchStartY.current - touchCurrentY);
+
     // Only trigger swipe left (positive deltaX) to reveal delete
     if (deltaX > 50 && deltaY < 100) {
-      setSwipedCategoryId(categoryId)
+      setSwipedCategoryId(categoryId);
     } else if (deltaX < -20) {
-      setSwipedCategoryId(null)
+      setSwipedCategoryId(null);
     }
   }
 
@@ -144,33 +162,40 @@ export function Home() {
 
   const categoryRows = useMemo(() => {
     return categories.map((c) => {
-      const active = activeLogByCategoryId[c.id]
-      const isSwiped = swipedCategoryId === c.id
+      const active = activeLogByCategoryId[c.id];
+      const isSwiped = swipedCategoryId === c.id;
       return (
-        <li 
-          key={c.id} 
+        <li
+          key={c.id}
           className="relative overflow-hidden border rounded"
-          onTouchStart={(e) => handleTouchStart(e, c.id)}
+          onTouchStart={handleTouchStart}
           onTouchMove={(e) => handleTouchMove(e, c.id)}
           onTouchEnd={handleTouchEnd}
         >
-          <div className={`flex items-center justify-between p-3 transition-transform duration-200 bg-white relative z-10 ${isSwiped ? '-translate-x-20' : 'translate-x-0'}`}>
+          <div
+            className={`flex items-center justify-between p-3 transition-transform duration-200 bg-white relative z-10 ${isSwiped ? '-translate-x-20' : 'translate-x-0'}`}
+          >
             <div className="flex items-center gap-3">
               <span className="font-medium">{c.name}</span>
-              {active && <span className="text-xs text-green-700">Running…</span>}
+              {active && (
+                <span className="text-xs text-green-700">Running…</span>
+              )}
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={() => toggleTimer(c.id)} className="px-3 py-1 rounded bg-gray-900 text-white">
+              <button
+                onClick={() => toggleTimer(c.id)}
+                className="px-3 py-1 rounded bg-gray-900 text-white"
+              >
                 {active ? 'Stop' : 'Start'}
               </button>
             </div>
           </div>
           {/* Swipe-to-delete action - hidden behind the main content */}
           <div className="absolute right-0 top-0 h-full w-20 bg-red-500 flex items-center justify-center z-0">
-            <button 
+            <button
               onClick={(e) => {
-                e.stopPropagation()
-                deleteCategory(c.id)
+                e.stopPropagation();
+                deleteCategory(c.id);
               }}
               onTouchStart={(e) => e.stopPropagation()}
               onTouchMove={(e) => e.stopPropagation()}
@@ -181,9 +206,15 @@ export function Home() {
             </button>
           </div>
         </li>
-      )
-    })
-  }, [categories, activeLogByCategoryId, swipedCategoryId])
+      );
+    });
+  }, [
+    categories,
+    activeLogByCategoryId,
+    swipedCategoryId,
+    toggleTimer,
+    deleteCategory,
+  ]);
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-6 space-y-6">
@@ -194,7 +225,12 @@ export function Home() {
           placeholder="New category name"
           className="flex-1 border rounded px-3 py-2"
         />
-        <button type="submit" className="px-3 py-2 rounded bg-gray-900 text-white">Add</button>
+        <button
+          type="submit"
+          className="px-3 py-2 rounded bg-gray-900 text-white"
+        >
+          Add
+        </button>
       </form>
       {error && <div className="text-sm text-red-600">{error}</div>}
       {loading ? (
@@ -203,7 +239,5 @@ export function Home() {
         <ul className="space-y-2">{categoryRows}</ul>
       )}
     </div>
-  )
+  );
 }
-
-
