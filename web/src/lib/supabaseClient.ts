@@ -9,13 +9,16 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
-export const supabase = createClient(supabaseUrl ?? '', supabaseAnonKey ?? '')
+export const supabase = createClient(supabaseUrl ?? '', supabaseAnonKey ?? '');
 
 export async function getCurrentUserId(): Promise<string | null> {
-  const { data: { user }, error } = await supabase.auth.getUser()
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
   if (error || !user) {
-    console.error('Authentication error:', error)
-    return null
+    console.error('Authentication error:', error);
+    return null;
   }
-  return user.id
-};
+  return user.id;
+}

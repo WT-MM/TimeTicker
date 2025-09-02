@@ -18,10 +18,6 @@ export function Analytics() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [logs, setLogs] = useState<TimeLog[]>([]);
 
-  useEffect(() => {
-    void refresh();
-  }, [range, refresh]);
-
   const refresh = useCallback(async () => {
     const {
       data: { user },
@@ -46,6 +42,10 @@ export function Analytics() {
       .not('duration_seconds', 'is', null);
     setLogs(_logs ?? []);
   }, [range]);
+
+  useEffect(() => {
+    void refresh();
+  }, [range, refresh]);
 
   const chartData = useMemo(() => {
     const nameById = new Map(categories.map((c) => [c.id, c.name]));
