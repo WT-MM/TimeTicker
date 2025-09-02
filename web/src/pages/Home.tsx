@@ -13,6 +13,9 @@ export function Home() {
   const [swipedCategoryId, setSwipedCategoryId] = useState<string | null>(null);
   const touchStartX = useRef<number>(0);
   const touchStartY = useRef<number>(0);
+  const mouseStartX = useRef<number>(0);
+  const mouseStartY = useRef<number>(0);
+  const isDragging = useRef<boolean>(false);
 
   useEffect(() => {
     void refresh();
@@ -160,6 +163,44 @@ export function Home() {
     // Touch end - could add auto-close after delay if desired
   }
 
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    mouseStartX.current = e.clientX;
+    mouseStartY.current = e.clientY;
+    isDragging.current = false;
+    setSwipedCategoryId(null);
+  }, []);
+
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent, categoryId: string) => {
+      if (!isDragging.current) {
+        const deltaX = Math.abs(mouseStartX.current - e.clientX);
+        const deltaY = Math.abs(mouseStartY.current - e.clientY);
+
+        // Start dragging if moved more than 5px horizontally
+        if (deltaX > 5 || deltaY > 5) {
+          isDragging.current = true;
+        }
+      }
+
+      if (isDragging.current) {
+        const deltaX = mouseStartX.current - e.clientX;
+        const deltaY = Math.abs(mouseStartY.current - e.clientY);
+
+        // Only trigger swipe if horizontal movement is greater than vertical
+        if (deltaX > 50 && deltaY < 100) {
+          setSwipedCategoryId(categoryId);
+        } else if (deltaX < -20) {
+          setSwipedCategoryId(null);
+        }
+      }
+    },
+    []
+  );
+
+  const handleMouseUp = useCallback(() => {
+    isDragging.current = false;
+  }, []);
+
   const categoryRows = useMemo(() => {
     return categories.map((c) => {
       const active = activeLogByCategoryId[c.id];
@@ -167,10 +208,14 @@ export function Home() {
       return (
         <li
           key={c.id}
-          className="relative overflow-hidden border rounded"
+          className="relative overflow-hidden border rounded select-none"
           onTouchStart={handleTouchStart}
           onTouchMove={(e) => handleTouchMove(e, c.id)}
           onTouchEnd={handleTouchEnd}
+          onMouseDown={handleMouseDown}
+          onMouseMove={(e) => handleMouseMove(e, c.id)}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
         >
           <div
             className={`flex items-center justify-between p-3 transition-transform duration-200 bg-white relative z-10 ${isSwiped ? '-translate-x-20' : 'translate-x-0'}`}
@@ -214,6 +259,9 @@ export function Home() {
     swipedCategoryId,
     toggleTimer,
     deleteCategory,
+    handleMouseDown,
+    handleMouseMove,
+    handleMouseUp,
   ]);
 
   return (
