@@ -16,7 +16,13 @@ export function Auth() {
       password,
     });
     setIsLoading(false);
-    if (error) setError(error.message);
+    if (error) {
+      setError(error.message);
+    } else {
+      // Clear form on successful sign in
+      setEmail('');
+      setPassword('');
+    }
   }
 
   async function handleSignUp(e: React.FormEvent) {
@@ -25,15 +31,19 @@ export function Auth() {
     setIsLoading(true);
     const { error } = await supabase.auth.signUp({ email, password });
     setIsLoading(false);
-    if (error) setError(error.message);
+    if (error) {
+      setError(error.message);
+    } else {
+      // Clear form on successful sign up
+      setEmail('');
+      setPassword('');
+    }
   }
 
   return (
     <div className="min-h-dvh grid place-items-center px-4">
       <div className="w-full max-w-sm">
-        <h1 className="text-2xl font-semibold mb-6 text-center">
-          Sign in to TimeTicker
-        </h1>
+        <h1 className="text-2xl font-semibold mb-6 text-center">Sign in</h1>
         <form className="space-y-3" onSubmit={handleSignIn}>
           <input
             type="email"
