@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import type { Category, TimeLog } from '../types'
 
@@ -8,6 +8,9 @@ export function Home() {
   const [error, setError] = useState<string | null>(null)
   const [activeLogByCategoryId, setActiveLogByCategoryId] = useState<Record<string, TimeLog | undefined>>({})
   const [newCategoryName, setNewCategoryName] = useState('')
+  const [swipedCategoryId, setSwipedCategoryId] = useState<string | null>(null)
+  const touchStartX = useRef<number>(0)
+  const touchStartY = useRef<number>(0)
 
   useEffect(() => {
     void refresh()
@@ -50,18 +53,32 @@ export function Home() {
       data: { user },
     } = await supabase.auth.getUser()
     if (!user) return
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('categories')
       .insert({ name: newCategoryName.trim(), user_id: user.id })
-    if (error) setError(error.message)
-    setNewCategoryName('')
-    await refresh()
+      .select()
+      .single()
+    if (error) {
+      setError(error.message)
+    } else {
+      setCategories(prev => [...prev, data])
+      setNewCategoryName('')
+    }
   }
 
   async function deleteCategory(categoryId: string) {
     const { error } = await supabase.from('categories').delete().eq('id', categoryId)
-    if (error) setError(error.message)
-    await refresh()
+    if (error) {
+      setError(error.message)
+    } else {
+      setCategories(prev => prev.filter(c => c.id !== categoryId))
+      setActiveLogByCategoryId(prev => {
+        const updated = { ...prev }
+        delete updated[categoryId]
+        return updated
+      })
+      setSwipedCategoryId(null)
+    }
   }
 
   async function toggleTimer(categoryId: string) {
@@ -71,10 +88,16 @@ export function Home() {
     } = await supabase.auth.getUser()
     if (!user) return
     if (!active) {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('time_logs')
         .insert({ user_id: user.id, category_id: categoryId, started_at: new Date().toISOString() })
-      if (error) setError(error.message)
+        .select()
+        .single()
+      if (error) {
+        setError(error.message)
+      } else {
+        setActiveLogByCategoryId(prev => ({ ...prev, [categoryId]: data }))
+      }
     } else {
       const endedAt = new Date()
       const startedAt = new Date(active.started_at)
@@ -83,30 +106,84 @@ export function Home() {
         .from('time_logs')
         .update({ ended_at: endedAt.toISOString(), duration_seconds: durationSeconds })
         .eq('id', active.id)
-      if (error) setError(error.message)
+      if (error) {
+        setError(error.message)
+      } else {
+        setActiveLogByCategoryId(prev => {
+          const updated = { ...prev }
+          delete updated[categoryId]
+          return updated
+        })
+      }
     }
-    await refresh()
+  }
+
+  function handleTouchStart(e: React.TouchEvent, categoryId: string) {
+    touchStartX.current = e.touches[0].clientX
+    touchStartY.current = e.touches[0].clientY
+    setSwipedCategoryId(null)
+  }
+
+  function handleTouchMove(e: React.TouchEvent, categoryId: string) {
+    const touchCurrentX = e.touches[0].clientX
+    const touchCurrentY = e.touches[0].clientY
+    const deltaX = touchStartX.current - touchCurrentX
+    const deltaY = Math.abs(touchStartY.current - touchCurrentY)
+    
+    // Only trigger swipe left (positive deltaX) to reveal delete
+    if (deltaX > 50 && deltaY < 100) {
+      setSwipedCategoryId(categoryId)
+    } else if (deltaX < -20) {
+      setSwipedCategoryId(null)
+    }
+  }
+
+  function handleTouchEnd() {
+    // Touch end - could add auto-close after delay if desired
   }
 
   const categoryRows = useMemo(() => {
     return categories.map((c) => {
       const active = activeLogByCategoryId[c.id]
+      const isSwiped = swipedCategoryId === c.id
       return (
-        <li key={c.id} className="flex items-center justify-between border rounded p-3">
-          <div className="flex items-center gap-3">
-            <span className="font-medium">{c.name}</span>
-            {active && <span className="text-xs text-green-700">Running…</span>}
+        <li 
+          key={c.id} 
+          className="relative overflow-hidden border rounded"
+          onTouchStart={(e) => handleTouchStart(e, c.id)}
+          onTouchMove={(e) => handleTouchMove(e, c.id)}
+          onTouchEnd={handleTouchEnd}
+        >
+          <div className={`flex items-center justify-between p-3 transition-transform duration-200 bg-white relative z-10 ${isSwiped ? '-translate-x-20' : 'translate-x-0'}`}>
+            <div className="flex items-center gap-3">
+              <span className="font-medium">{c.name}</span>
+              {active && <span className="text-xs text-green-700">Running…</span>}
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={() => toggleTimer(c.id)} className="px-3 py-1 rounded bg-gray-900 text-white">
+                {active ? 'Stop' : 'Start'}
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => toggleTimer(c.id)} className="px-3 py-1 rounded bg-gray-900 text-white">
-              {active ? 'Stop' : 'Start'}
+          {/* Swipe-to-delete action - hidden behind the main content */}
+          <div className="absolute right-0 top-0 h-full w-20 bg-red-500 flex items-center justify-center z-0">
+            <button 
+              onClick={(e) => {
+                e.stopPropagation()
+                deleteCategory(c.id)
+              }}
+              onTouchStart={(e) => e.stopPropagation()}
+              onTouchMove={(e) => e.stopPropagation()}
+              onTouchEnd={(e) => e.stopPropagation()}
+              className="text-white font-medium text-sm"
+            >
+              Delete
             </button>
-            <button onClick={() => deleteCategory(c.id)} className="px-3 py-1 rounded border">Delete</button>
           </div>
         </li>
       )
     })
-  }, [categories, activeLogByCategoryId])
+  }, [categories, activeLogByCategoryId, swipedCategoryId])
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-6 space-y-6">

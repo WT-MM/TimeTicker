@@ -1,5 +1,7 @@
 # TimeTicker
 
+[Live demo](https://time-ticker-khaki.vercel.app/)
+
 ## Description
 
 TimeTicker is a simple web app that allows you to track the time you spend on different tasks.
